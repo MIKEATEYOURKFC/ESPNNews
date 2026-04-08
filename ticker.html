@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>KFC BottomLine - NewsAPI Headlines</title>
+    <style>
+        body { margin:0; overflow:hidden; font-family:"Helvetica Neue", Arial, sans-serif; color:white; background: #111; }
+        .wrapper { position:absolute; bottom:0; width:100%; overflow:hidden; }
+        .ticker-container {
+            display:flex; align-items:center; height:50px;
+            background: linear-gradient(to bottom, #222, #000);
+            border-top: 3px solid #c8102e;
+        }
+        .logo-section {
+            display:flex; align-items:center; background:#c8102e;
+            padding:0 20px; height:100%; font-weight:800; white-space:nowrap;
+            z-index: 10; box-shadow: 5px 0 15px rgba(0,0,0,0.5);
+        }
+        .logo-section img { height:30px; margin-right:10px; }
+        .ticker { overflow:hidden; flex:1; position: relative; }
+        .ticker-content {
+            display:inline-flex; white-space:nowrap; align-items: center;
+            padding-left: 20px; animation: scroll-left 120s linear infinite;
+        }
+        @keyframes scroll-left { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+        .score-item { display:inline-flex; align-items:center; margin-right:40px; font-size:18px; white-space:nowrap; }
+        .separator { margin:0 20px; color:#555; font-weight: bold; }
+        .team { display:flex; align-items:center; margin-right:8px; }
+        .team img { height:22px; margin-right:6px; background: rgba(255,255,255,0.1); border-radius: 2px; }
+        .score { font-weight:bold; margin:0 5px; color: #fff; }
+        .status { margin-left:10px; font-size:13px; color:#aaa; text-transform: uppercase; }
+        .live { color:#00ff87; font-weight:bold; }
+        .final { color:#888; }
+        .breaking {
+            position:absolute; bottom:50px; width:100%;
+            background: rgba(200, 16, 46, 0.95); color:white;
+            font-weight:bold; padding:8px 15px; display:flex; align-items:center;
+        }
+        .breaking-label { background:#ffd700; color:black; font-weight:900; padding:2px 8px; margin-right:15px; font-size: 14px; }
+        #headlineText { transition: opacity 0.4s; }
+    </style>
+</head>
+<body>
+
+<div class="breaking" id="breaking">
+    <div class="breaking-label">TOP SPORTS NEWS</div>
+    <div id="headlineText">Connecting to NewsAPI...</div>
+</div>
+
+<div class="wrapper">
+    <div class="ticker-container">
+        <div class="logo-section">
+            <img src="logo.png" alt=""> 
+            KFC BottomLine
+        </div>
+        <div class="ticker">
+            <div class="ticker-content" id="ticker">Loading live scores...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+/** --- SCORES LOGIC (ESPN API) --- **/
+function getTeamLogo(abbr, sport) {
+    return abbr ? `https://a.espncdn.com/i/teamlogos/${sport}/500/${abbr}.png` : '';
+}
+
+function getStatus(game) {
+    try {
+        const s = game.status?.type;
+        if (s?.completed) return "FINAL";
+        if (s?.state === "in") return game.status.shortDetail || "LIVE";
+        return game.status?.type?.shortDetail || "UPCOMING";
+    } catch { return "LIVE"; }
+}
+
+async function fetchScores() {
+    const leagues = [
+        {url:"https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard", sport:"nhl"},
+        {url:"https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard", sport:"nba"},
+        {url:"https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard", sport:"nfl"},
+        {url:"https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard", sport:"mlb"}
+    ];
+    let output = "";
+    for (let league of leagues) {
+        try {
+            const res = await fetch(league.url);
+            const data = await res.json();
+            data.events?.forEach(game => {
+                const comp = game.competitions?.[0];
+                const home = comp?.competitors?.find(t => t.homeAway === "home");
+                const away = comp?.competitors?.find(t => t.awayAway === "away" || t.homeAway === "away");
+                if (!home || !away) return;
+                const status = getStatus(game);
+                output += `
+                <div class='score-item'>
+                    <div class='team'><img src='${getTeamLogo(away.team.abbreviation, league.sport)}'>${away.team.abbreviation}</div>
+                    <span class='score'>${away.score || 0}</span>
+                    <span class='separator'>-</span>
+                    <span class='score'>${home.score || 0}</span>
+                    <div class='team'><img src='${getTeamLogo(home.team.abbreviation, league.sport)}'>${home.team.abbreviation}</div>
+                    <span class='status ${status === "FINAL" ? "final" : "live"}'>${status}</span>
+                </div><div class='separator'>|</div>`;
+            });
+        } catch (e) { console.error(e); }
+    }
+    document.getElementById("ticker").innerHTML = output + output || "No live games";
+}
+
+/** --- HEADLINES LOGIC (NewsAPI) --- **/
+let headlines = ["Loading news feed..."];
+let headlineIndex = 0;
+
+// Replace YOUR_API_KEY_HERE with your actual key from newsapi.org
+const API_KEY = "YOUR_API_KEY_HERE";
+
+async function fetchHeadlines() {
+    if (API_KEY === "265689604816430c90cd8e1cde8ce3c3") {
+        headlines = ["MISSING API KEY", "Please add your NewsAPI.org key to the code"];
+        return;
+    }
+
+    const url = `https://newsapi.org/v2/top-headlines?category=sports&language=en&apiKey=${API_KEY}`;
+
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (data.status === "ok" && data.articles.length > 0) {
+            // Clean headlines to remove the source (e.g., "- ESPN") from the end of strings
+            headlines = data.articles.map(article => {
+                return article.title.split(' - ')[0];
+            });
+            console.log("NewsAPI Headlines loaded.");
+        } else if (data.message) {
+            headlines = [data.message];
+        }
+    } catch (err) {
+        console.error("NewsAPI Fetch Failed:", err);
+        headlines = ["News feed unavailable", "Check your API key or internet connection"];
+    }
+}
+
+function rotateHeadline() {
+    const el = document.getElementById("headlineText");
+    if (!el) return;
+    el.style.opacity = 0;
+    setTimeout(() => {
+        el.innerText = headlines[headlineIndex];
+        headlineIndex = (headlineIndex + 1) % headlines.length;
+        el.style.opacity = 1;
+    }, 400);
+}
+
+// Init
+fetchHeadlines().then(() => {
+    rotateHeadline();
+    setInterval(rotateHeadline, 8000); // Rotate every 8 seconds
+});
+
+fetchScores();
+setInterval(fetchScores, 60000); // Update scores every minute
+</script>
+</body>
+</html>
